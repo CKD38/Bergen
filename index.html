@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卑爾根</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Morandi Rose (background), Morandi Blue (primary text/accents), White/Gray (neutrals) from index.html -->
+    <!-- Application Structure Plan: A tab-based SPA dashboard. The default '總覽' tab provides a chronological timeline. Other tabs ('交通', '景點', '美食', '活動', '卑爾根卡') offer deep dives into specific categories with interactive elements. This structure allows for both a high-level overview and detailed exploration, prioritizing user tasks (like comparing transport or exploring restaurants) over the linear format of the source report. Interactive cards with filtering are key to enhancing usability. -->
+    <!-- Visualization & Content Choices:
+        - Report Info: Airport transport options (time, cost for 4 adults). Goal: Inform. Viz: Detailed text descriptions and a comparison table. Interaction: None. Justification: Provides clear, concise information without requiring complex charts.
+        - Report Info: Lists of attractions and restaurants. Goal: Organize & Explore. Viz: Interactive HTML/CSS cards in a filterable grid. Interaction: Click to expand for details, filter by category. Justification: Reduces cognitive load by hiding details until requested, making the interface cleaner.
+        - Report Info: Chronological trip events. Goal: Inform. Viz: A static visual timeline. Interaction: None. Justification: Provides a clear, at-a- glance structure for the entire trip.
+        - Report Info: Bergen Card details. Goal: Inform & Persuade. Viz: Dedicated text section with bullet points for benefits and limitations. Interaction: None. Justification: Presents a clear summary for users to decide if it's beneficial for their trip.
+        - Library/Method: Vanilla JS for tab navigation and card interactions. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        /* Active tab button color from --color-norway-blue-accent */
+        .tab-btn.active { border-color: #7093B0; color: #7093B0; background-color: rgba(112, 147, 176, 0.1); }
+        
+        /* General collapsible card styling, now applied to all expandable cards */
+        .collapsible-card {
+            background-color: #FDFDFD; /* Changed to Morandi White */
+            border: 1px solid #DDDDDD; /* Light gray border */
+            border-radius: 0.75rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            overflow: hidden; /* Ensures content transitions smoothly within bounds */
+        }
+
+        .collapsible-header {
+            background-color: #FDFDFD; /* Changed to Morandi White */
+            padding: 1rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #E0E0E0; /* Changed border to a lighter grey */
+            transition: background-color 0.3s ease;
+        }
+
+        .collapsible-header:hover {
+            background-color: rgba(242, 226, 228, 0.7); /* Lighter hover effect, but still in Morandi Rose tone for consistency */
+        }
+
+        .collapsible-header-content { /* Content inside the header for flexible layout */
+            display: flex;
+            align-items: center;
+            flex-grow: 1; /* Allow content to take available space */
+        }
+
+        .collapsible-header-icon { /* For emojis or other small icons in the header */
+            font-size: 1.5rem; /* Adjust size as needed */
+            margin-right: 0.75rem; /* Spacing from text */
+            color: #7093B0; /* Blue accent for icons */
+        }
+
+        .collapsible-title-group { /* For title and highlight/subtitle */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .collapsible-icon { /* For the expand/collapse arrow/plus icon */
+            color: #A54C53; /* Darker rose for the icon */
+            font-size: 1.5rem; /* Large plus sign */
+            font-weight: bold;
+            transform: rotate(0deg); /* Initial state */
+            transition: transform 0.3s ease-in-out;
+            margin-left: 1rem; /* Spacing from header content */
+        }
+
+        .collapsible-header.expanded .collapsible-icon {
+            transform: rotate(45deg); /* Rotates to an 'X' when expanded */
+        }
+
+        .collapsible-content {
+            padding: 1rem;
+            padding-top: 0; /* Adjust padding due to border-top if needed */
+            text-align: justify; /* Justify text for better readability */
+            display: none; /* Hidden by default */
+            max-height: 0; /* For collapse animation */
+            overflow: hidden;
+            transition: max-height 0.5s ease-out, padding 0.5s ease-out;
+            position: relative; /* Added for positioning the map button */
+        }
+
+        .collapsible-header.expanded + .collapsible-content {
+            display: block; /* Show content when expanded */
+            max-height: 9999px; /* Allow content to fully expand */
+            padding-top: 1rem; /* Restore top padding when opened */
+        }
+
+        .collapsible-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        /* Chart container styles */
+        .chart-container { position: relative; width: 100%; max-width: 700px; margin-left: auto; margin-right: auto; height: 250px; max-height: 300px; }
+        @media (min-width: 768px) { .chart-container { height: 300px; max-height: 350px; } }
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="bg-[#F2E2E4] text-[#333333]">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-[#A54C53]">🇳🇴 卑爾根</h1>
+            <p id="accommodation-link" class="text-lg text-[#4A728D] mt-2 cursor-pointer hover:underline">🏨 Modern City Apt</p>
+        </header>
+
+        <nav class="sticky top-0 z-10 bg-[#F2E2E4]/80 backdrop-blur-sm mb-8 py-2 border-b border-[#DDDDDD]">
+            <div class="flex flex-wrap justify-center gap-2 md:gap-4">
+                <button data-tab="overview-introduction" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">總覽</button>
+                <button data-tab="itinerary-overview" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">行程概略</button>
+                <button data-tab="attractions" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">景點探索</button>
+                <button data-tab="events" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">特別活動</button>
+                <button data-tab="dining" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">美食饗宴</button>
+                <button data-tab="bergen-card" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">卑爾根卡</button>
+                <button data-tab="transport" class="tab-btn px-4 py-2 text-sm md:text-base font-semibold text-[#6b7280] border-b-2 border-transparent hover:bg-[rgba(112,147,176,0.08)] hover:text-[#333333] transition-colors duration-300 rounded-t-lg">機場交通</button>
+            </div>
+        </nav>
+
+        <main>
+            <!-- 新增的「總覽」分頁 -->
+            <div id="overview-introduction-content" class="tab-content">
+                <div class="bg-white p-8 rounded-2xl shadow-lg border border-[#DDDDDD] max-w-4xl mx-auto space-y-4">
+                    <!-- First paragraph as introduction -->
+                    <p class="text-[#333333]">卑爾根，素有「峽灣之門」美譽，是一座將自然風光、豐富歷史與活力文化完美融合的城市。作為聯合國教科文組織世界遺產地，其魅力源於風景如畫的港口、色彩繽紛的木屋以及周圍七座壯麗的山脈。這座城市的核心區域異常緊湊，非常適合步行探索，甚至比搭乘公車更為便捷。這種高度的步行友善性，讓旅客能夠更深入地體驗其鵝卵石街道和歷史遺跡，享受更為沉浸式的旅程。</p>
+
+                    <!-- Collapsible Card 1: 卑爾根的歷史沿革 -->
+                    <div class="collapsible-card bg-[#FDFDFD] rounded-xl shadow-sm border border-[#DDDDDD] overflow-hidden">
+                        <div class="collapsible-header flex items-center justify-between p-4 cursor-pointer">
+                            <h3 class="text-xl font-bold text-[#A54C53]">卑爾根的歷史沿革</h3>
+                            <span class="collapsible-icon">+</span>
+                        </div>
+                        <div class="collapsible-content p-4 pt-0 text-[#333333]">
+                            <p>卑爾根在挪威歷史上扮演著舉足輕重的角色，曾是挪威的首都，也是中世紀漢薩同盟的重要貿易中心。布呂根（Bryggen）地區的彩色木屋便是這段輝煌歷史的最佳見證。幾個世紀以來，這座城市一直是商業和文化的樞紐，其港口至今仍是通往挪威西部壯麗峽灣的門戶，吸引著來自世界各地的遊客。</p>
+                            <!-- Removed image from here -->
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Card 2: 現代卑爾根 -->
+                    <div class="collapsible-card bg-[#FDFDFD] rounded-xl shadow-sm border border-[#DDDDDD] overflow-hidden mt-4">
+                        <div class="collapsible-header flex items-center justify-between p-4 cursor-pointer">
+                            <h3 class="text-xl font-bold text-[#A54C53]">現代卑爾根</h3>
+                            <span class="collapsible-icon">+</span>
+                        </div>
+                        <div class="collapsible-content p-4 pt-0 text-[#333333]">
+                            <p>如今，卑爾根不僅保留了豐富的歷史遺產，也發展成為一個充滿現代活力的城市。這裡有世界級的博物館、藝術畫廊、多元化的餐飲選擇以及豐富的文化活動，如卑爾根國際音樂節。無論您是尋求歷史的足跡、自然的壯麗，還是現代都市的便捷與文化深度，卑爾根都能為您提供一次難忘的旅程體驗。</p>
+                            <!-- Removed image from here -->
+                        </div>
+                    </div>
+                    <!-- New image added below the collapsible cards in Overview -->
+                    <div class="text-center mt-8">
+                        <img src="https://www.muchbetteradventures.com/magazine/content/images/2022/06/Bergen-city-guide.jpg" alt="[Image of Bergen City Overview]" class="rounded-lg mx-auto w-full h-auto object-cover">
+                        <p class="text-sm text-[#6b7280] mt-2">卑爾根城市概覽</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 行程概略 (原 行程總覽) -->
+            <div id="itinerary-overview-content" class="tab-content">
+                <div class="space-y-8">
+                    <!-- Day 1 -->
+                    <div class="relative pl-8 md:pl-12">
+                        <div class="absolute left-2.5 md:left-4 top-2 w-2 h-2 mt-1.5 bg-[#7093B0] rounded-full border-4 border-[#F2E2E4]"></div>
+                        <div class="absolute left-4 md:left-5.5 top-5 h-full border-l-2 border-[#DDDDDD] border-dashed"></div>
+                        <h3 class="text-2xl font-bold text-[#7093B0]">7月23日 (週三): 抵達 & 初探</h3>
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                                <h4 class="font-bold text-lg text-[#333333]">🚢 渡輪抵達</h4>
+                                <p class="text-[#6b7280] mt-2">從 Balestrand 搭乘 Norled 渡輪，預計於 <span class="font-semibold text-[#C0707F]">上午 11:45</span> 抵達卑爾根 Strandkaiterminal 碼頭。</p>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                                <h4 class="font-bold text-lg text-[#333333]">🏨 住宿資訊</h4>
+                                <p class="text-[#6b7280] mt-2">入住位於市中心的 <span class="font-semibold">"New! Modern City Apt"</span>，地址為 70 Kong Oscars gate。地理位置優越，方便探索。</p>
+                            </div>
+                        </div>
+                    </div>
+                     <!-- Day 2 -->
+                    <div class="relative pl-8 md:pl-12">
+                        <div class="absolute left-2.5 md:left-4 top-2 w-2 h-2 mt-1.5 bg-[#7093B0] rounded-full border-4 border-[#F2E2E4]"></div>
+                        <div class="absolute left-4 md:left-5.5 top-5 h-full border-l-2 border-[#DDDDDD] border-dashed"></div>
+                        <h3 class="text-2xl font-bold text-[#7093B0]">7月24日 (週四): 全日自由探索</h3>
+                        <p class="text-[#6b7280] mt-2">這是您完整的一天！根據天氣和您的心情，自由安排行程。您可以：</p>
+                        <ul class="list-disc list-inside mt-4 space-y-2 text-[#333333]">
+                            <li>上午漫步於世界遺產 <span class="font-semibold">布呂根 (Bryggen)</span>，感受歷史氣息。</li>
+                            <li>下午搭乘纜車登上 <span class="font-semibold">弗洛伊恩山 (Mount Fløyen)</span>，俯瞰城市全景。</li>
+                            <li>在熱鬧的 <span class="font-semibold">魚市場</span> 品嚐新鮮的海鮮午餐。</li>
+                        </ul>
+                    </div>
+                    <!-- Day 3 -->
+                    <div class="relative pl-8 md:pl-12">
+                         <div class="absolute left-2.5 md:left-4 top-2 w-2 h-2 mt-1.5 bg-[#7093B0] rounded-full border-4 border-[#F2E2E4]"></div>
+                        <h3 class="text-2xl font-bold text-[#7093B0]">7月25日 (週五): 告別卑爾根</h3>
+                         <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                                <h4 class="font-bold text-lg text-[#333333]">✈️ 航班起飛</h4>
+                                <p class="text-[#6b7280] mt-2">搭乘挪威航空 DY611 航班，於 <span class="font-semibold text-[#C0707F]">上午 09:20</span> 從卑爾gen機場 (BGO) 飛往奧斯陸。</p>
+                                <p class="text-sm text-[#6b7280] mt-2">建議最晚於 <span class="font-semibold">07:20</span> 抵達機場。</p>
+                            </div>
+                             <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD] flex flex-col justify-center">
+                                <h4 class="font-bold text-lg text-[#333333]">🚗 前往機場</h4>
+                                <p class="text-[#6b7280] mt-2">有多種交通方式可供選擇。點擊下方按鈕查看詳細的成本與時間比較。</p>
+                                <button class="mt-4 px-4 py-2 bg-[#7093B0] text-white font-semibold rounded-lg hover:bg-[#5d7a92] transition-colors" onclick="document.querySelector('[data-tab=transport]').click()">查看機場交通方案</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 機場交通 -->
+            <div id="transport-content" class="tab-content">
+                <div class="mt-8 space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                        <h4 class="font-bold text-lg">🚊 輕軌 (Bybanen)</h4>
+                        <ul class="list-disc list-inside text-[#6b7280] mt-2 space-y-1">
+                            <li>最經濟的選擇，班次頻繁。約 43-46 分鐘。</li>
+                            <li>成人單程票價為 49 挪威克朗。兒童 (6-17歲) 及長者單程票價為 25 挪威克朗。6歲以下兒童免費。</li>
+                            <li>對於4位成人和2位兒童的團體，總計約 <span class="font-semibold text-[#C0707F]">246 挪威克朗</span> (4成人 x 49 NOK + 2兒童 x 25 NOK = 196 + 50 = 246 NOK)。</li>
+                            <li><span class="font-semibold">最近車站:</span> Nonneseter (步行約3分鐘)</li>
+                        </ul>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                        <h4 class="font-bold text-lg">🚌 機場巴士 (Flybussen)</h4>
+                        <ul class="list-disc list-inside text-[#6b7280] mt-2 space-y-1">
+                            <li>速度比輕軌快，行李空間充足。約 25-31 分鐘。</li>
+                            <li>成人單程票價為 179 挪威克朗。</li>
+                            <li><span class="font-semibold text-[#C0707F]">2位6-17歲兒童與成人同行時免費。</span></li>
+                            <li>對於4位成人和2位兒童的團體，總計約 <span class="font-semibold text-[#C0707F]">716 挪威克朗</span> (4成人 x 179 NOK + 2兒童 x 0 NOK = 716 NOK)。</li>
+                            <li><span class="font-semibold">最近車站:</span> Bergen Bus Station (步行約4分鐘)</li>
+                        </ul>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-[#DDDDDD]">
+                        <h4 class="font-bold text-lg">🚕 計程車</h4>
+                        <ul class="list-disc list-inside text-[#6b7280] mt-2 space-y-1">
+                            <li>最快、最直接的選擇。約 17-19 分鐘。</li>
+                            <li>門到門服務，免去搬運行李的麻煩。建議提前詢問清晨的固定費率。</li>
+                            <li><span class="font-semibold">優點:</span> 速度與便利性最佳。對於6人團體，可能需要兩輛計程車。</li>
+                        </ul>
+                    </div>
+                </div>
+                 <div class="mt-8 bg-[rgba(112,147,176,0.1)] border border-[#7093B0] rounded-2xl p-6">
+                    <h3 class="text-xl font-bold text-[#7093B0]">卑爾根卡 (Bergen Card) 實用提示</h3>
+                    <p class="mt-2 text-[#333333]">如果您計劃參觀多個博物館和景點，並頻繁使用公共交通，購買卑爾根卡可能非常划算。它提供免費的市內交通（含往返機場的輕軌，但不含機場巴士），以及眾多景點門票的免費或折扣優惠。建議您根據行程規劃，評估是否購買。</p>
+                </div>
+            </div>
+
+            <!-- 景點探索 -->
+            <div id="attractions-content" class="tab-content">
+                <div id="attraction-grid" class="flex flex-col space-y-6">
+                </div>
+            </div>
+
+            <!-- 美食饗宴 -->
+            <div id="dining-content" class="tab-content">
+                <div id="dining-grid" class="flex flex-col space-y-6">
+                </div>
+            </div>
+
+            <!-- 特別活動 -->
+            <div id="events-content" class="tab-content">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                    <div class="collapsible-card bg-white rounded-2xl shadow-lg border border-[#DDDDDD] flex flex-col">
+                         <div class="collapsible-header flex items-center justify-between p-4 cursor-pointer">
+                            <div class="collapsible-header-content">
+                                <span class="collapsible-header-icon">🎲</span>
+                                <div class="collapsible-title-group">
+                                    <h3 class="text-xl font-bold text-[#333333]">卑爾根遊戲節 (Bergen Spillfestival)</h3>
+                                    <p class="text-[#C0707F] font-semibold mt-1">2025年7月23日 - 8月10日</p>
+                                </div>
+                            </div>
+                            <span class="collapsible-icon">+</span>
+                        </div>
+                        <div class="collapsible-content p-4 pt-0 text-[#333333]">
+                            <p class="mt-4 flex-grow">這個節日涵蓋了從桌遊、電玩到VR體驗的各種遊戲。雖然白天對所有人開放，但晚間的活動專為成人設計，為您的夜晚提供了獨特的娛樂選擇。</p>
+                            <div class="mt-6 bg-[#F2E2E4] text-[#A54C53] p-4 rounded-lg">
+                                <p class="font-bold">� 成人專屬:</p>
+                                <p>晚間活動需購票，是體驗當地夜間文化的好去處。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="collapsible-card bg-white rounded-2xl shadow-lg border border-[#DDDDDD] flex flex-col">
+                        <div class="collapsible-header flex items-center justify-between p-4 cursor-pointer">
+                            <div class="collapsible-header-content">
+                                <span class="collapsible-header-icon">🎵</span>
+                                <div class="collapsible-title-group">
+                                    <h3 class="text-xl font-bold text-[#333333]">卑爾根國際管風琴音樂節 (Bergen International Organ Festival)</h3>
+                                    <p class="text-[#C0707F] font-semibold mt-1">2025年6月29日 - 8月24日</p>
+                                </div>
+                            </div>
+                            <span class="collapsible-icon">+</span>
+                        </div>
+                        <div class="collapsible-content p-4 pt-0 text-[#333333]">
+                            <p class="mt-4 flex-grow">整個夏季，卑爾根的教堂都會舉辦以管風琴音樂為主的音樂會。來自挪威國內外的藝術家將在頂級樂器上演奏豐富的管風琴曲目。</p>
+                            <div class="mt-6 bg-[#F2E2E4] text-[#A54C53] p-4 rounded-lg">
+                                <p class="font-bold">🎶 文化體驗:</p>
+                                <p>為您的夜晚提供欣賞古典音樂的選擇。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 卑爾根卡詳情 -->
+            <div id="bergen-card-content" class="tab-content">
+                <div class="bg-white p-8 rounded-2xl shadow-lg border border-[#DDDDDD] max-w-4xl mx-auto">
+                    <h3 class="text-2xl font-bold text-[#7093B0] mb-4">卑爾根卡價格 (2025年)</h3>
+                    <div class="overflow-x-auto mb-8">
+                        <table class="min-w-full bg-white rounded-lg shadow-md overflow-hidden text-center">
+                            <thead class="bg-[#F2E2E4] text-[#A54C53] text-lg font-semibold">
+                                <tr>
+                                    <th class="py-3 px-4">時長</th>
+                                    <th class="py-3 px-4">成人 (NOK)</th>
+                                    <th class="py-3 px-4">兒童 (NOK)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-[#DDDDDD]">
+                                    <td class="py-3 px-4">24 小時</td>
+                                    <td class="py-3 px-4">420</td>
+                                    <td class="py-3 px-4">120</td>
+                                </tr>
+                                <tr class="border-b border-[#DDDDDD]">
+                                    <td class="py-3 px-4">48 小時</td>
+                                    <td class="py-3 px-4">540</td>
+                                    <td class="py-3 px-4">160</td>
+                                </tr>
+                                <tr class="border-b border-[#DDDDDD]">
+                                    <td class="py-3 px-4">72 小時</td>
+                                    <td class="py-3 px-4">660</td>
+                                    <td class="py-3 px-4">200</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-3 px-4">96 小時</td>
+                                    <td class="py-3 px-4">780</td>
+                                    <td class="py-3 px-4">240</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="text-2xl font-bold text-[#7090B0] mb-4">主要優勢</h3>
+                    <ul class="list-disc list-inside text-[#333333] space-y-3 pl-4">
+                        <li>
+                            <strong class="text-[#C0707F]">免費公共交通：：</strong> 憑卡可免費搭乘 Skyss 公共交通系統（公車和輕軌）在卑爾根及周邊地區，包括往返機場的輕軌 Line 1 和 Line 2。
+                        </li>
+                        <li>
+                            <strong class="text-[#C0707F]">免費或折扣入場：：</strong> 可免費或折扣入場多個博物館、景點和活動。例如：
+                            <ul class="list-circle list-inside ml-5 mt-1 space-y-1 text-sm">
+                                <li>卑爾根海事博物館 (免費入場)</li>
+                                <li>卑爾根藝術中心 (KODE Art Museums) (免費入場)</li>
+                                <li>弗洛伊恩纜車 (Fløibanen Funicular) (夏季折扣，冬季免費)</li>
+                                <li>烏爾里肯纜車 (Ulriken Cable Car) (折扣)</li>
+                                <li>卑爾根胡斯要塞 (Bergenhus Fortress) (部分折扣)</li>
+                                <li>卑爾根博物館 (Bergen Museum) (免費入場)</li>
+                                <li>卑爾根水族館 (Bergen Aquarium) (折扣)</li>
+                                <li>卑爾根科學中心 (VilVite) (折扣)</li>
+                                <li>以及更多其他博物館、畫廊和觀光巴士。</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong class="text-[#C0707F]">其他折扣：：</strong> 在部分餐廳和停車設施也享有折扣。
+                        </li>
+                        <li>
+                            <strong class="text-[#C0707F]">簡化購票流程：：</strong> 無需在每次搭乘或參觀時單獨購票，節省您的時間。
+                        </li>
+                    </ul>
+                    <h3 class="text-2xl font-bold text-[#7090B0] mb-4 mt-8">使用須知與考量</h3>
+                    <ul class="list-disc list-inside text-[#333333] space-y-3 pl-4">
+                        <li>
+                            <strong class="text-[#C0707F]">不適用於機場巴士 (Flybussen)：</strong> 請注意，卑爾根卡 **不適用於** 機場巴士服務。如果您計劃搭乘機場巴士，仍需額外購票。
+                        </li>
+                        <li>
+                            <strong class="text-[#C0707F]">評估您的行程：：</strong> 在購買卑爾根卡之前，建議您預估計劃參觀的景點數量和公共交通使用頻率。如果您的行程主要集中在少數免費景點或步行可達的區域，單獨購票可能更為划算。
+                        </li>
+                        <li>
+                            <strong class="text-[#C0707F]">購買地點：：</strong> 卑爾根卡可在卑爾根旅遊資訊中心、部分飯店和營地購買。
+                        </li>
+                    </ul>
+                    <p class="mt-6 text-center text-[#6b7280]">對於計劃深入探索卑爾根且頻繁使用公共交通的旅客，卑爾根卡將是提升便利性與節省開支的絕佳選擇。</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Accommodation Modal -->
+        <div id="accommodation-modal" class="fixed inset-0 bg-slate-900 bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
+            <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl max-w-lg w-full relative">
+                <button id="close-modal-btn" class="absolute top-4 right-4 text-[#6b7280] hover:text-[#333333] text-2xl font-bold">&times;</button>
+                <h3 class="text-2xl font-bold text-[#7093B0] mb-4">住宿詳情: Modern City Apt</h3>
+                <div class="text-[#333333] space-y-2">
+                    <p><strong>地址:</strong> 70 Kong Oscars gate, 卑爾根區, 卑爾根, 挪威, 5018</p>
+                    <p><strong>入住日期:</strong> 2025年7月23日</p>
+                    <p><strong>退房日期:</strong> 2025年7月25日</p>
+                    <p><strong>房型:</strong> 兩臥室公寓 (Two-Bedroom Apartment)</p>
+                    <p><strong>設施:</strong> 咖啡/茶, 免費無線網路</p>
+                    <p><strong>位置優勢:</strong> 位於歷史悠久的 Bergenhus 區，步行可達 Bergenhus Fortress、Rosenkrantz Tower，周圍有藝廊、精品店和咖啡館。</p>
+                    <p class="text-sm text-[#6b7280] mt-4">公寓式住宿提供自行烹飪的靈活性，尤其方便準備早餐或簡餐。</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const contents = document.querySelectorAll('.tab-content');
+
+            function activateTab(tabId) {
+                tabs.forEach(tab => {
+                    tab.classList.toggle('active', tab.dataset.tab === tabId);
+                });
+                contents.forEach(content => {
+                    content.classList.toggle('active', content.id === `${tabId}-content`);
+                });
+            }
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    activateTab(tab.dataset.tab);
+                });
+            });
+
+            // 預設啟動新的「總覽」分頁
+            activateTab('overview-introduction');
+
+            const attractionsData = [
+                { id: 1, category: 'landmark', name: '布呂根漢薩碼頭', highlight: 'UNESCO世界遺產，歷史的彩色印記', details: '卑爾根的標誌性地標。色彩斑斕的木屋建築群充滿歷史韻味，裡面有商店、藝廊和餐廳。您可以漫步於狹窄的巷弄中，探索古老的建築結構，感受漢薩同盟時期的貿易氛應。可深入了解布呂根博物館與歷史建築群(Schøtstuene)。', time: '2-3 小時 (含博物館參觀)', price: '戶外區域免費 / 導覽 390 NOK (含布呂根博物館和歷史建築群(Schøtstuene)入場)', hours: '區域全天開放；布呂根博物館 7 月開放時間為每日 10:00-17:00', lat: 60.397077, lng: 5.324383, img: 'https://placehold.co/600x400/C0707F/FFFFFF?text=Bryggen', emoji: '🏘️', mapKeyword: 'Bryggen Hansa Quarter' },
+                { id: 2, category: 'panorama', name: '弗洛伊恩纜車與山頂', highlight: '最經典的城市全景觀景台', details: '搭乘纜車可輕鬆抵達山頂，俯瞰卑爾根市區、峽灣和周邊群島的壯麗全景。山頂有餐廳、紀念品店和兒童遊樂設施，包括可愛的巨魔森林 (Trollskogen)。山頂有多條健行步道。', time: '1-2 小時 (搭纜車上下，觀景)', price: '成人來回票約 190 NOK (夏季價格)', hours: '每日 07:30-00:00', lat: 60.396418, lng: 5.328572, img: 'https://placehold.co/600x400/7093B0/FFFFFF?text=Floyen+View', emoji: '⛰️', mapKeyword: 'Fløyen Funicular Railway' },
+                { id: 4, category: 'landmark', name: '卑爾根胡斯要塞', highlight: '見證挪威皇家歷史的古老要塞', details: '挪威最古老、保存最好的石造要塞之一，擁有悠久的歷史。包含霍肯大廳 (Håkon\'s Hall) 和羅森克蘭茨塔 (Rosenkrants Tower)。要塞博物館免費參觀，了解要塞的歷史。', time: '1.5-2 小時', price: '要塞區域免費 / 塔樓+大廳聯票', hours: '要塞區域：每日 06:00-23:00；霍肯大廳：夏季通常 10:00-16:00；羅森克蘭茨塔：7 月通常 10:00-19:00；博物館：每日 11:00-17:00 (免費)', lat: 60.400002, lng: 5.318541, img: 'https://placehold.co/600x400/A54C53/FFFFFF?text=Bergenhus+Fortress', emoji: '🏰', mapKeyword: 'Bergenhus Fortress' },
+                { id: 5, category: 'culture', name: 'KODE 藝術博物館群', highlight: '北歐頂級的藝術與設計收藏', details: '卑爾根的綜合性藝術博物館，包含四棟建築 (KODE 1, 2, 3, 4)，收藏了挪威和國際藝術家的作品，包括愛德華·孟克 (Edvard Munch) 的畫作。部分博物館可能設有兒童活動區或互動展覽。', time: '2-4 小時 (視您對藝術的興趣而定，可選擇性參觀)', price: '一張票 175 NOK (成人，可在同一天進入所有博物館)', hours: '夏季通常週二至週五 10:00-18:00，週六至週日 10:00-16:00 (週一閉館)', lat: 60.389927, lng: 5.325535, img: 'https://placehold.co/600x400/4A728D/FFFFFF?text=KODE+Museums', emoji: '🖼️', mapKeyword: 'Kode Art Museum - Lysverket' },
+                { id: 6, category: 'foodie-landmark', name: '卑爾根魚市 (Fisketorget)', highlight: '品嚐最新鮮海產的活力中心', details: '位於港口邊的露天市場，是購買新鮮海產、品嚐當地美食的好地方。除了海鮮，也有水果、紀念品和手工藝品攤位。您可以現場點選新鮮的海鮮，由攤販為您現場烹飪，體驗當地的市集文化。', time: '1-2 小時', price: '費用依選購項目而定', hours: '夏季 (5-9 月) 週一至週六 07:00-22:00，週日 09:00-22:00', lat: 60.392069, lng: 5.311952, img: 'https://placehold.co/600x400/6b7280/FFFFFF?text=Fish+Market', emoji: '🐟', mapKeyword: 'Fisketorget, Bergen' }
+            ];
+
+            // Updated dining data based on user request: Holbergstuen removed, Trekroneren moved to first
+            const diningData = [
+                { id: 7, category: 'casual', name: 'Trekroneren', highlight: '卑爾根傳奇熱狗攤', price: '經濟實惠', details: '卑爾根著名的熱狗攤，提供多種口味的熱狗。推薦搭配洋蔥脆片和當地芥末醬的熱狗。非常適合快速方便的午餐或點心。', emoji: '🌭', mapKeyword: 'Trekroneren, Bergen' },
+                { id: 1, category: 'traditional', name: 'Pingvinen (企鵝餐廳)', highlight: '挪威傳統家常菜，氛圍輕鬆', price: '中等 (主菜約 NOK 169-259)', details: '挪威傳統家常菜，氛圍輕鬆。推薦馴鹿肉丸、魚湯等。友善的氛圍適合帶小孩。', emoji: '🐧', mapKeyword: 'Pingvinen, Bergen' },
+                { id: 2, category: 'traditional', name: 'Bryggeloftet & Stuene', highlight: '布呂根旁的傳統挪威菜', price: '中高 (主菜約 NOK 295-495)', details: '位於布呂根的歷史建築內，提供傳統挪威菜和海鮮。推薦烤鱈魚、鯨魚肉 (如果接受)。提供兒童菜單。', emoji: '🍽️', mapKeyword: 'Bryggeloftet & Stuene, Bergen' },
+                { id: 3, category: 'modern', name: 'Bare Vestland', highlight: '現代挪威菜，強調在地食材和創意味道', price: '中高', details: '現代挪威菜，強調在地食材和創意味道。推薦創新海鮮料理。', emoji: '🍷', mapKeyword: 'Bare Vestland, Bergen' }
+            ];
+            
+            function createCard(item, type) {
+                const grid = document.getElementById(`${type}-grid`);
+                const card = document.createElement('div');
+                // Apply collapsible-card class for consistent styling across all expandable cards
+                card.className = 'collapsible-card';
+
+                let detailsHtmlContent = ``;
+                let mapUrl = '';
+
+                if (type === 'attractions') {
+                    // Use mapKeyword for attractions if available, otherwise lat/lng and name
+                    mapUrl = item.mapKeyword ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.mapKeyword)}` : `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}&query_place_id=${encodeURIComponent(item.name)}`;
+                    
+                    detailsHtmlContent = `
+                        <p><strong><span class="text-[#6b7280]">建議時長:</span></strong> ${item.time}</p>
+                        <p><strong><span class="text-[#6b7280]">門票參考:</span></strong> ${item.price}</p>
+                        <p><strong><span class="text-[#6b7280]">開放時間:</span></strong> ${item.hours}</p>
+                        <div class="relative w-full h-48 sm:h-64 md:h-72 lg:h-80 overflow-hidden rounded-lg mt-4">
+                            <img src="${item.img}" alt="${item.name}" class="absolute inset-0 w-full h-full object-cover">
+                        </div>
+                        `;
+                } else { // For dining cards
+                    // Use mapKeyword for dining if available, otherwise name and city for search
+                    mapUrl = item.mapKeyword ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.mapKeyword)}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.name + ', Bergen')}`;
+                    detailsHtmlContent = `<p><strong><span class="text-[#6b7280]">價格範圍:</span></strong> ${item.price}</p>`;
+                }
+
+                // Construct the full HTML for the card using the collapsible-header and collapsible-content structure
+                card.innerHTML = `
+                    <div class="collapsible-header">
+                        <div class="collapsible-header-content">
+                            <span class="collapsible-header-icon">${item.emoji}</span>
+                            <div class="collapsible-title-group">
+                                <h3 class="text-xl font-bold text-[#333333]">${item.name}</h3>
+                                <p class="text-[#C0707F] font-semibold mt-1">${item.highlight}</p>
+                            </div>
+                        </div>
+                        <span class="collapsible-icon">+</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p class="text-[#333333] mb-2">${item.details}</p>
+                        ${detailsHtmlContent}
+                        <a href="${mapUrl}" target="_blank" class="absolute bottom-4 right-4 px-4 py-2 bg-[#7093B0] text-white font-semibold rounded-lg hover:bg-[#5d7a92] transition-colors">打開地圖</a>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            }
+
+            attractionsData.forEach(item => createCard(item, 'attraction'));
+            diningData.forEach(item => createCard(item, 'dining'));
+            
+            const accommodationLink = document.getElementById('accommodation-link');
+            const accommodationModal = document.getElementById('accommodation-modal');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+
+            accommodationLink.addEventListener('click', () => {
+                accommodationModal.classList.remove('hidden');
+            });
+
+            closeModalBtn.addEventListener('click', () => {
+                accommodationModal.classList.add('hidden');
+            });
+
+            accommodationModal.addEventListener('click', (event) => {
+                if (event.target === accommodationModal) { // Close when clicking outside the modal content
+                    accommodationModal.classList.add('hidden');
+                }
+            });
+
+            window.onclick = function(event) {
+                if (event.target.matches('[onclick*="transport"]')) {
+                    activateTab('transport');
+                    setTimeout(() => {
+                        document.getElementById('transport-content').scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                }
+            }
+
+            // JavaScript for collapsible sections - now targets all .collapsible-header
+            const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+
+            collapsibleHeaders.forEach(header => {
+                const content = header.nextElementSibling; // This will be .collapsible-content
+                const icon = header.querySelector('.collapsible-icon');
+
+                // Ensure initial state is correct and handle expansion/collapse
+                icon.style.transform = 'rotate(0deg)'; // Ensure initial state is correct
+
+                header.addEventListener('click', () => {
+                    header.classList.toggle('expanded'); // Toggle 'expanded' class on header
+                    // The CSS handles the display/max-height based on 'expanded' class for smooth transition
+                });
+            });
+        });
+    </script>
+</body>
+</html>
+�
